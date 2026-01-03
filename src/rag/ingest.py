@@ -14,7 +14,10 @@ def ingest_documents():
     """
     # Initialize the Embedding Model (Runs locally, free)
     print("Loading embedding model (this may take a minute)...")
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={'device': 'cpu'}
+    )
     
     # Check for PDFs
     if not os.path.exists(DATA_PATH):

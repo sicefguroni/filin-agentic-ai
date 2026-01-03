@@ -1,19 +1,36 @@
-# 1. Use a slim version of Python (Industry standard for smaller images)
+# 1. Base Image
 FROM python:3.10-slim
 
-# 2. Set the working directory inside the container
+# 2. Set Working Directory
 WORKDIR /app
 
-# 3. Copy just the requirements first (Docker Layer Caching optimization)
-# If you change your code but not your requirements, Docker won't re-install everything.
+# 3. INSTALL SYSTEM DEPENDENCIES
+# We add --no-install-recommends to keep it small and stable
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4. UPGRADE PIP (Crucial for modern wheels)
+# Old pip versions try to compile from source. New pip downloads pre-built binaries.
+RUN pip install --upgrade pip
+
+# 5. INSTALL TORCH CPU VERSION SPECIFICALLY (The "Lite" Version)
+# This forces downloading the Linux binary instead of compiling it.
+# It saves ~1GB of download and massive CPU time.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# 6. INSTALL OTHER HEAVY LIBRARIES INDIVIDUALLY
+RUN pip install --no-cache-dir sentence-transformers
+RUN pip install --no-cache-dir langchain-huggingface
+
+# 7. INSTALL REMAINING APP DEPENDENCIES
 COPY requirements.txt .
+# We use --no-deps to avoid re-installing the heavy stuff
+RUN pip install --no-cache-dir --no-deps -r requirements.txt
 
-# 4. Install dependencies
-# --no-cache-dir keeps the image small by not saving the cache
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 5. Copy the rest of the application
+# 8. Copy Application Code
 COPY . .
 
-# 6. Default command (We will override this in docker-compose, but good to have)
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 9. Start Command
+CMD ["streamlit", "run", "src/app.py", "--server.address", "0.0.0.0"]
