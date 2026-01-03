@@ -4,6 +4,7 @@ from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
 from src.tools.market_data import get_stock_price
 from src.tools.calculator import calculator
+from src.tools.rag import analyze_document
 
 def initialize_agent():
     llm = ChatGroq(
@@ -12,27 +13,21 @@ def initialize_agent():
         groq_api_key=os.getenv("GROQ_API_KEY")
     )
 
-    tools = [get_stock_price, calculator]
+    tools = [get_stock_price, calculator, analyze_document]
 
-    # --- THE FIX: IMPROVED SYSTEM PROMPT ---
+    # --- STRICTER PROMPT ---
     prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                "You are an expert Financial Analyst Agent. "
-                "Your goal is to provide accurate stock market data and perform precise calculations.\n\n"
+                "You are a decisive Financial Analyst Agent. "
+                "You have access to market data, a calculator, and internal documents.\n\n"
                 
-                "CRITICAL INSTRUCTIONS:\n"
-                "1. **Fetch First**: Always use 'get_stock_price' to get the real data before doing ANY math.\n"
-                "2. **Extract Numbers**: Never pass text labels like 'previous price' to the calculator. You must pass EXACT NUMBERS (e.g., '150.00 / 145.20').\n"
-                "3. **Read Carefully**: If the stock tool output already tells you the percentage change (e.g., 'up 2%'), just report that. Do not recalculate it unless asked.\n"
-                "4. **Formatting**: Format all monetary values with $ and 2 decimal places.\n\n"
-                
-                "Example of Correct Logic:\n"
-                "User: 'Is AAPL up?'\n"
-                "Step 1: Call get_stock_price('AAPL') -> Returns 'Price is 150, Open was 145'\n"
-                "Step 2: Calculate '150 - 145' using the calculator.\n"
-                "Step 3: Answer 'It is up by $5.'"
+                "### CRITICAL RULES (FOLLOW THESE OR FAIL) ###\n"
+                "1. **NO MATH CHECKS**: If a tool returns a number (e.g., 'down $1.22'), **BELIEVE IT**. Do NOT use the calculator to verify it.\n"
+                "2. **NO REPEATING**: Do not call 'analyze_document' twice for the same query. Search once, get the text, and use it.\n"
+                "3. **CALCULATOR USAGE**: Only use the calculator if the user explicitly asks for a calculation (e.g., 'What is 50% of the price?') or if the data is missing.\n"
+                "4. **FINISH FAST**: Once you have the Stock Price and the Document info, stop searching and answer the user immediately.\n\n"
             ),
             ("human", "{input}"),
             ("placeholder", "{agent_scratchpad}"),
@@ -40,4 +35,11 @@ def initialize_agent():
     )
 
     agent = create_tool_calling_agent(llm, tools, prompt)
-    return AgentExecutor(agent=agent, tools=tools, verbose=True)
+    
+    return AgentExecutor(
+        agent=agent, 
+        tools=tools, 
+        verbose=True, 
+        max_iterations=5,           # Hard limit to stop infinite loops
+        handle_parsing_errors=True  # recover if the LLM makes a typo
+    )
